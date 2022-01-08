@@ -1,21 +1,25 @@
-import urllib3
+import sqlite3
 from zipfile import ZipFile
 
 import requests
+import urllib3
 from bs4 import BeautifulSoup
-from utils import insert_postgresql, insert_values, create_table_postgresql, create_view_postgresql, file_compress
+
+from utils import (create_table_postgresql, create_view_postgresql,
+                   file_compress, insert_postgresql, insert_values)
 
 requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS = 'ALL:@SECLEVEL=1'
 BASE_URL = 'https://www.set.gov.py'
 URL = f'{BASE_URL}/portal/PARAGUAY-SET/InformesPeriodicos?folder-id=repository:collaboration:/sites/PARAGUAY-SET/categories/SET/Informes%20Periodicos/listado-de-ruc-con-sus-equivalencias'
 
 values = []
+values_list = []
 
 def get_download_preview_links():
     links = []
     try:
         soup = BeautifulSoup(
-            requests.get(
+            requests.get( 
                 URL,
                 timeout=10,
                 headers={"user-agent": "Mozilla/5.0"},
@@ -79,6 +83,7 @@ def create_values(filename):
             except ValueError:
                 ruc, rz, dv, str, d, d1 = line.split('|')
             values.append(insert_values(ruc, rz, dv, str))
+            values_list.append((f"{ruc}-{dv}", rz))
 
 def build_database():
     with open('ruc.sql', 'w', encoding='utf8') as f:
@@ -88,9 +93,21 @@ def build_database():
         chunks = [values[x:x+1000] for x in range(0, len(values), 1000)]
         for v in chunks:
             f.write('\n'+insert_postgresql(',\n'.join(v)))
+            
+def build_sqlite3():
+    con = sqlite3.connect('ruc.db')
+    cur = con.cursor()
+    cur.execute('DROP TABLE ruc')
+    cur.execute('''CREATE TABLE ruc
+                (ruc text, razonsocial text)''')
+    
+
+    cur.executemany(f"INSERT INTO ruc VALUES (?, ?)", values_list)
+    con.commit()
+    con.close()
 
 def zip_database():
-    file_compress(['ruc.sql'], 'dist/ruc.zip')
+    file_compress(['ruc.sql'], '../dist/ruc.zip')
 
 if __name__ == '__main__':
     links = get_download_preview_links()
@@ -108,4 +125,6 @@ if __name__ == '__main__':
         create_values(f"tmp/{name.split('.')[0]}.txt")
     print("building database")
     build_database()
+    print("building sqlite database")
+    build_sqlite3()
     zip_database()
