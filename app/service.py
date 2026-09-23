@@ -6,6 +6,7 @@ import pandas as pd
 import sqlalchemy
 from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
+from starlette.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
 from . import _set, ips, mimetypes, models
@@ -44,7 +45,14 @@ def ensure_db():
 
 
 ensure_db()
-app = FastAPI()
+
+# Interactive docs and the OpenAPI schema are disabled unless ENABLE_DOCS=true.
+_docs_kwargs = (
+    {}
+    if settings.ENABLE_DOCS
+    else {"docs_url": None, "redoc_url": None, "openapi_url": None}
+)
+app = FastAPI(**_docs_kwargs)
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_headers=["*"], allow_methods=["*"]
 )
@@ -63,6 +71,13 @@ elif settings.JWT_ALGORITHM != "HS256":
 
 @app.get("/health")
 async def health():
+    # Public liveness/readiness probe: only reports "ok" when the RUC table is readable.
+    try:
+        row = await db.fetch_val("SELECT 1 FROM ruc LIMIT 1")
+    except Exception:
+        row = None
+    if row is None:
+        return JSONResponse(status_code=503, content={"status": "unavailable"})
     return {"status": "ok"}
 
 
@@ -75,6 +90,14 @@ async def startup():
         print(f"engine: {engine}")
         metadata_1.create_all(engine)
         await db_1.disconnect()
+    await db.connect()
+    await db_1.connect()
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    await db.disconnect()
+    await db_1.disconnect()
 
 
 @router.get("/", response_class=PrettyJSONResponse)

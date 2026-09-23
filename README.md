@@ -109,85 +109,49 @@ El proyecto incluye varios comandos CLI para gestionar diferentes tareas:
 
 ## Despliegue
 
+### Production (Dokploy)
+
+The production deployment at `https://people.lanzapy.com` uses [`compose.prod.yaml`](compose.prod.yaml) as a Dokploy Compose app. See [`docs/DEPLOY.md`](docs/DEPLOY.md) for the architecture, environment variables, first deploy, token issuing, secret rotation, data refresh and rollback.
+
 ### Docker
 
 > [!NOTE]
-> La imagen publicada por el proyecto original (`ghcr.io/blasferna/people`) no incluye la autenticación JWT. Para usar este fork, construye la imagen desde este repositorio.
+> The image published by the original project (`ghcr.io/blasferna/people`) does not include JWT authentication. Build the image from this repository.
 
-Construye la imagen:
+The image runs as an unprivileged user (uid 1001), listens on port **3000** and refuses to start unless `JWT_SECRET` is set and at least 32 characters long.
+
+Build the image:
 
 ```bash
 docker build -t people .
 ```
 
-Es necesario crear un volumen para almacenar los datos:
+Create a volume for the data and build the RUC database once (downloads DNIT data, takes several minutes):
 
 ```bash
 docker volume create people_data
+docker run --rm -v people_data:/code/data people init-data
 ```
 
-Ejecuta la imagen pasando el archivo `.env` con `JWT_SECRET`:
+Run the API with the `.env` file containing `JWT_SECRET`:
 
 ```bash
-docker run -d --name people -p 80:80 -v people_data:/code/data --env-file .env people
+docker run -d --name people -p 3000:3000 -v people_data:/code/data --env-file .env people
 ```
 
-Para emitir un token desde el contenedor en ejecución:
+Issue a token from the running container:
 
 ```bash
 docker exec people python manage.py token --sub android-app --days 365
 ```
 
-Opcionalmente puedes ejecutar los comandos CLI de la aplicación utilizando Docker. Por ejemplo, para reconstruir la base de datos:
+Rebuild the database later:
 
 ```bash
 docker run --rm -v people_data:/code/data people build
 ```
 
-### Docker Compose
-
-También puedes utilizar Docker Compose para desplegar la aplicación. Asegúrate de crear un archivo `docker-compose.yml` con el siguiente contenido:
-
-```yaml
-services:
-  app:
-    build: .
-    ports:
-      - "80:80"
-    env_file:
-      - .env
-    volumes:
-      - people_data:/code/data
-    restart: unless-stopped
-
-volumes:
-  people_data:
-```
-
-Para desplegar la aplicación con Docker Compose, ejecuta el siguiente comando:
-
-```bash
-docker-compose up -d --build
-```
-
-Este comando construirá la imagen desde este repositorio, creará un volumen llamado `people_data` para almacenar los datos persistentes, y ejecutará el contenedor en segundo plano.
-
-La opción `-d` indica que el contenedor se ejecutará en segundo plano y en combinación con la opción `restart: unless-stopped` del archivo `docker-compose.yml`, el contenedor se reiniciará automáticamente si se detiene o se reinicia el sistema.
-
-
-Para detener:
-
-```bash
-docker-compose stop
-```
-
-Para detener y eliminar los contenedores:
-
-```bash
-docker-compose down -v
-```
-
-La opción `-v` eliminará el volumen `people_data` junto con los contenedores. Sólo ejecutar cuando se desee eliminar los datos almacenados.
+Entrypoint commands: `runserver` (default), `init-data`, `build`, `download`, `token`; anything else is executed as-is. Interactive docs (`/docs`, `/openapi.json`) are disabled unless `ENABLE_DOCS=true`.
 
 ## Endpoints
 

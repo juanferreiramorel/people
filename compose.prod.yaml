@@ -1,0 +1,69 @@
+# Production stack for Dokploy ("Compose" deployment type).
+# Domain routing/TLS is configured in Dokploy (it attaches Traefik to the
+# `web` service over dokploy-network); no host ports are published.
+# See docs/DEPLOY.md.
+name: people-prod
+
+x-build: &build
+  context: .
+  dockerfile: Dockerfile
+  target: runner
+
+services:
+  # One-shot job: builds data/ruc.db from DNIT data if it is missing.
+  init-data:
+    build: *build
+    image: people-web:latest
+    command: ["init-data"]
+    restart: "no"
+    volumes:
+      - people_data:/code/data
+    networks:
+      - people_internal
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+
+  web:
+    build: *build
+    image: people-web:latest
+    command: ["runserver"]
+    restart: unless-stopped
+    depends_on:
+      init-data:
+        condition: service_completed_successfully
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      PORT: "3000"
+      ENABLE_DOCS: "false"
+    volumes:
+      - people_data:/code/data
+    networks:
+      - people_internal
+      - dokploy-network
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:3000/health', timeout=4).status == 200 else 1)"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 768M
+
+volumes:
+  people_data:
+
+networks:
+  people_internal:
+    driver: bridge
+  dokploy-network:
+    external: true

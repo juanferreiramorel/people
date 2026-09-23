@@ -1,6 +1,23 @@
-venv
-data/tmp/*.*
 .git
+.github
+.devcontainer
+.gitpod.yml
+.vscode
+.idea
+venv
+.venv
+env
+**/__pycache__
+**/*.py[cod]
 
+# Local data and secrets never go into the image
+data
 .env
 *.token
+
+# Deployment/docs files are not needed at runtime
+compose*.yaml
+docker-compose*.yml
+docs
+README.md
+captain-definition.json
