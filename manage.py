@@ -30,6 +30,32 @@ def download(args):
         download(settings.PEOPLE_DB_URL, "data/personas.db")
 
 
+def token(args):
+    import datetime
+
+    import jwt
+
+    from app.conf import settings
+
+    if not settings.JWT_SECRET:
+        print(
+            "Error: JWT_SECRET no configurado (defina la variable de entorno o .env)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if args.days <= 0:
+        print("Error: --days debe ser mayor a 0", file=sys.stderr)
+        sys.exit(1)
+
+    now = datetime.datetime.now(tz=datetime.timezone.utc)
+    payload = {
+        "sub": args.sub,
+        "iat": now,
+        "exp": now + datetime.timedelta(days=args.days),
+    }
+    print(jwt.encode(payload, settings.JWT_SECRET, algorithm="HS256"))
+
+
 def main():
     parser = argparse.ArgumentParser(description="CLI for managing people")
 
@@ -60,6 +86,14 @@ def main():
         "download", help="Download pre-built databases"
     )
     download_parser.set_defaults(func=download)
+
+    # Command: token
+    token_parser = subparsers.add_parser("token", help="Issue a signed JWT (HS256)")
+    token_parser.add_argument("--sub", type=str, required=True, help="Token subject")
+    token_parser.add_argument(
+        "--days", type=int, default=365, help="Days until the token expires"
+    )
+    token_parser.set_defaults(func=token)
 
     if len(sys.argv) == 1:
         parser.print_help()

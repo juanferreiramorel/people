@@ -5,6 +5,7 @@ WORKDIR /code
 COPY ./requirements.txt /code/requirements.txt
 COPY ./wsgi-service.py /code/wsgi-service.py 
 COPY ./entrypoint.sh /code/entrypoint.sh
+RUN sed -i 's/\r$//' /code/entrypoint.sh && chmod +x /code/entrypoint.sh
 
 RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 

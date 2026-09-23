@@ -4,11 +4,12 @@ from typing import List, Optional
 
 import pandas as pd
 import sqlalchemy
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from starlette.middleware.cors import CORSMiddleware
 
 from . import _set, ips, mimetypes, models
+from .auth import jwt_configured, verificar_token
 from .conf import settings
 from .db import db, db_1, metadata_1
 from .utils import PrettyJSONResponse, download, get_delimitter, str_to_datestr
@@ -48,6 +49,22 @@ app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_headers=["*"], allow_methods=["*"]
 )
 
+# Every data endpoint lives on this router and requires a valid JWT.
+router = APIRouter(dependencies=[Depends(verificar_token)])
+
+if not jwt_configured():
+    print(
+        "WARNING: JWT_SECRET no configurado. "
+        "Todos los endpoints protegidos responderan 503 hasta configurarlo."
+    )
+elif settings.JWT_ALGORITHM != "HS256":
+    print("WARNING: JWT_ALGORITHM ignorado; solo se acepta HS256.")
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
 
 @app.on_event("startup")
 async def startup():
@@ -60,7 +77,7 @@ async def startup():
         await db_1.disconnect()
 
 
-@app.get("/", response_class=PrettyJSONResponse)
+@router.get("/", response_class=PrettyJSONResponse)
 async def get_ruc(ruc):
     data = await models.Ruc.retreive(db, ruc)
     if data is None:
@@ -79,7 +96,7 @@ async def get_ruc(ruc):
     return data
 
 
-@app.get("/search", response_class=PrettyJSONResponse)
+@router.get("/search", response_class=PrettyJSONResponse)
 async def search(query):
     query = query.strip()
     results = await models.Ruc.search(db, query)
@@ -93,7 +110,7 @@ async def search(query):
     return results
 
 
-@app.get("/ips", response_class=PrettyJSONResponse)
+@router.get("/ips", response_class=PrettyJSONResponse)
 async def get_ips(documento):
     try:
         return ips.consulta_asegurado(documento)
@@ -103,7 +120,7 @@ async def get_ips(documento):
         )
 
 
-@app.get("/personas", response_class=PrettyJSONResponse)
+@router.get("/personas", response_class=PrettyJSONResponse)
 async def get_persona(cedula):
     result = await models.Persona.retreive(db_1, cedula)
     if result is None:
@@ -131,7 +148,7 @@ class Document(BaseModel):
     id: str
 
 
-@app.post("/names", response_class=PrettyJSONResponse)
+@router.post("/names", response_class=PrettyJSONResponse)
 async def set_names(documents: List[Document]):
     ids = [d.id for d in documents]
     people = await models.Persona.get_dict(db_1, ids)
@@ -142,7 +159,7 @@ async def set_names(documents: List[Document]):
     return data
 
 
-@app.post("/validate-ruc", response_class=PrettyJSONResponse)
+@router.post("/validate-ruc", response_class=PrettyJSONResponse)
 async def create_upload_file(
     file: Optional[UploadFile] = File(None),
     index: str = Form("0"),
@@ -217,3 +234,6 @@ async def create_upload_file(
                     )
                     counter[instance.estado] += 1
     return {"invalid_list": invalid_list, "counter": counter}
+
+
+app.include_router(router)

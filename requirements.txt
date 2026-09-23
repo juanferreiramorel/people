@@ -50,6 +50,8 @@ pip-tools==6.5.1
     # via -r requirements.in
 pycryptodome==3.14.1
     # via -r requirements.in
+pyjwt==2.8.0
+    # via -r requirements.in
 pydantic==1.9.0
     # via fastapi
 python-dateutil==2.8.2
